@@ -1,0 +1,255 @@
+\documentclass{article}
+
+\usepackage{amssymb}
+\usepackage{amsmath, amsfonts, amsthm}
+\usepackage{graphicx, epsfig, wrapfig, fancyhdr}
+\usepackage{tabularx}
+\usepackage{courier}
+\usepackage{array,calc} 
+\usepackage{amsmath}
+\usepackage{epsfig}
+\usepackage{wrapfig}
+\usepackage{graphicx}
+\usepackage{multirow}
+\usepackage{geometry}
+\usepackage{mdwlist}
+\usepackage{fancyhdr}
+\usepackage{color}
+\usepackage{alltt}
+\usepackage{hyperref}
+\usepackage{colortbl}
+\usepackage{booktabs}
+\usepackage{multicol}
+\usepackage[english]{babel}
+\usepackage{blindtext}
+\usepackage{listings}
+\usepackage[utf8]{inputenc}
+
+\textwidth=16cm \textheight = 23 cm
+\renewcommand\baselinestretch{1.1}
+\topmargin = -30pt \oddsidemargin= 0pt
+
+\pagestyle{fancy}%\pagenumbering{roman}
+\lhead{\footnotesize Coding manual} \chead{} \rhead{\bfseries
+\href{mailto:zhangquake@gmail.com}{\nolinkurl{zhangquake@gmail.com}}} \lfoot{\today} \cfoot{\thepage} \rfoot{}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0.4pt}
+\newcommand{\uchi}              {\mbox{\boldmath$\chi$}}
+\newcommand{\ux}            {\mbox{\boldmath$x$}}
+\newcommand{\ue}              {\mbox{\boldmath$e$}}
+
+\lstset{frame=shadowbox,
+rulesepcolor=\color{blue},
+basicstyle=\ttfamily,
+basicstyle=\footnotesize,
+%numbers=left,
+keywordstyle=\color{red},
+stringstyle=\color{green},
+}
+
+\def\dsum{\displaystyle\sum}
+\def\dint{\displaystyle\int}
+\def\dprod{\displaystyle\prod}
+\definecolor{com}{rgb}{0.13,0.54,0.13}
+\definecolor{code}{rgb}{0.0,0.0,1.0}
+\vspace{.4cm}\author{Zhen Zhang}
+%\date{}
+\makeatletter  %define roman number
+\newcommand{\rmnum}[1]{\romannumeral #1}
+\newcommand{\Rmnum}[1]{\expandafter\@slowromancap\romannumeral #1@}
+\makeatother
+\newcommand{\ubeta}       {\mbox{\boldmath$\beta$}}
+\newcommand{\uW}       {\mbox{\boldmath$W$}}
+\newcommand{\umu}       {\mbox{\boldmath$\mu$}}
+\newcommand{\ueta}       {\mbox{\boldmath$\eta$}}
+\newcommand{\uy}       {\mbox{\boldmath$y$}}
+\newcommand{\uZ}       {\mbox{\boldmath$Z$}}
+\newcommand{\uX}       {\mbox{\boldmath$X$}}
+\newcommand{\uK}       {\mbox{\boldmath$K$}}
+\newcommand{\proglang}[1]{{\textsf{#1}}}
+\newcommand{\R}{\proglang{R}}
+
+\newenvironment{mylisting}
+{\begin{list}{}{\setlength{\leftmargin}{1em}}\item\scriptsize\bfseries}
+{\end{list}}
+
+\newenvironment{mytinylisting}
+{\begin{list}{}{\setlength{\leftmargin}{1em}}\item\tiny\bfseries}
+{\end{list}}
+\usepackage{Sweave}
+\SweaveOpts{prefix.string=./fig}   %figures
+
+\begin{document}
+%\maketitle
+
+\begin{center}
+{\Large{\bf  Coding manual for ``Bayesian variable selection in the AFT model 
+with an application to  the SEER breast cancer data"}}
+% Adjusted for Multiple Prognostic and Demographic Factors 
+% }}
+\end{center}
+
+\rm\small \vspace{.2cm}
+
+\noindent For each of the methods, we report the results including false negatives/positives based on $M=500$ simulated data (different $M$ replications for different methods) under the same simulation design. 
+
+
+\vskip 5mm 
+%\item[\textbf{Cox-LASSO}]
+\noindent\textbf{Cox-LASSO}
+
+<<label=p71,keep.source=T,fig=F,echo=T,include=T, eval=F,height=4, width=9>>=
+rm(list=ls())
+library(glmnet)
+
+# simulation 1
+M <- 500
+mysBeta <- matrix(0,M,20)
+mydirs = './';
+
+for(k in 1:M){
+  cat(k,'')
+  if(!k%%20) cat('\n')
+  sdat <- readMat(paste(mydirs,'simudat',k,'.mat',sep=''))
+  x <- as.matrix(sdat$Z)
+  y <- cbind(time=as.numeric(sdat$V), status=as.integer(sdat$Delta))
+  # first do 10-fold cross-validation to select lambda
+  cvfit <- cv.glmnet(x,y, family="cox") 
+  # plugin the optimal lambda
+  fit <- glmnet(x,y, family="cox", lambda=cvfit$lambda.min)
+  mysBeta[k,which(fit$beta!=0)] <- 1
+}
+@
+
+
+
+
+
+\vskip 5mm 
+\noindent\textbf{Gereralized F with forward/backward selection based on BIC}
+
+<<label=p71,keep.source=F,fig=F,echo=T,include=T, eval=F,height=4, width=9>>=
+rm(list=ls())
+library(R.matlab)
+library(flexsurv)
+library(survival)
+
+options(warn=-1) #disable warnings
+
+# Rscript Input indicates the job id 1-500 that runs in parallel
+repl <- as.numeric(commandArgs(TRUE))
+
+myfilename <- paste('out',repl,sep='')
+
+M <- 500
+mysBeta_gf <- matrix(0,M,20)
+mydirs_gf = './';
+
+forward <- FALSE
+
+ptm <- proc.time()[3]
+count <- 0
+
+for(k in repl){  #1:M
+  cat('\n\nreplication =',k,'\n')
+  print(repl)
+  if(!k%%20) cat('\n')
+  sdat <- readMat(paste(mydirs_gf,'simudat',k,'.mat',sep=''))
+  p <- ncol(tmp <- as.data.frame(sdat$Z))
+  names(tmp) <- paste('X',1:p,sep='')
+  tmp$time <- as.numeric(sdat$V)
+  tmp$status <- as.integer(sdat$Delta)
+  if(forward){###  forward selection
+    fit0 <- flexsurvreg(Surv(time, status) ~ 1, data=tmp, dist='lnorm')
+    coefs <- as.numeric(coef(fit0))
+    init0 <- c(coefs[1],exp(coefs[2]),0,1e-6, coefs[-c(1:2)])
+    fit <- update(fit0, inits=init0, data=tmp, dist='genf')
+    
+    myfit <- fit
+    len <- length(indc <- 1:p)
+    q <- length(inds <- numeric(0))
+    aic0 <- BIC(myfit)
+    aics <- aic0-1
+    while(min(aics) < aic0 && q<=p){
+      cat('q = ',q,':  ',sep='')
+      aic0 <- BIC(myfit)
+      aics <- numeric(len)
+      fits <- list(len)
+      for(i in 1:len){
+        cat('X',indc[i],' ',sep='')
+        #if(!i%%10) cat('\n')
+        inds0 <- c(inds, indc[i])
+        myform0 <-  as.formula(paste("Surv(time, status) ~ ", paste(names(tmp)[inds0], collapse= "+")))
+        fit0 <- flexsurvreg(myform0, data=tmp, dist='lnorm',method = "Nelder-Mead")
+        coefs <- as.numeric(coef(fit0))
+        init0 <- c(coefs[1],exp(coefs[2]),0, 1e-6, coefs[-c(1:2)])
+        fits[[i]] <- update(fit0, inits=init0, dist='genf',method = "Nelder-Mead")
+        aics[i] <- BIC(fits[[i]])
+        count <- count+1
+      }
+      cat('\n')
+      optind <- which(aics == min(aics))
+      if(min(aics) < aic0){
+        myfit <- fits[[optind]]
+        cat('X',indc[optind],' was chosen\n\n',sep='')
+      }
+      q <- length( inds <- c(inds, indc[optind]) )
+      len <- length(indc <- indc[-optind])
+    }
+  }###
+  
+  
+  if(!forward){### backward selection
+    myform0 <-  as.formula(paste("Surv(time, status) ~ ", paste(names(tmp)[1:p], collapse= "+")))
+    fit0 <- flexsurvreg(myform0, data=tmp, dist='lnorm',method = "Nelder-Mead")
+    coefs <- as.numeric(coef(fit0))
+    init0 <- c(coefs[1],exp(coefs[2]),0,1e-6, coefs[-c(1:2)])
+    fit <- update(fit0, inits=init0, data=tmp, dist='genf')
+    
+    myfit <- fit
+    q <- length(inds <- 1:p)
+    aic0 <- BIC(myfit)
+    aics <- aic0-1
+    while(min(aics) < aic0 && q>0){
+      cat('q = ',q,' ',sep='')
+      aic0 <- BIC(myfit)
+      cat(round(aic0),': ',sep='')
+      aics <- numeric(q)
+      fits <- list(q)
+      for(i in 1:q){
+        cat('X',inds[i],' ',sep='')
+        inds0 <- inds[-i]  #c(inds, indc[i])
+        myform0 <-  as.formula(paste("Surv(time, status) ~ ", paste(names(tmp)[inds0], collapse= "+")))
+        fit0 <- flexsurvreg(myform0, data=tmp, dist='lnorm',method = "Nelder-Mead")
+        coefs <- as.numeric(coef(fit0))
+        init0 <- c(coefs[1],exp(coefs[2]),0, 1e-6, coefs[-c(1:2)])
+        fits[[i]] <- update(fit0, inits=init0, dist='genf')
+        aics[i] <- BIC(fits[[i]])
+        count <- count+1
+        cat(round(aics[i]),', ',sep='')
+      }
+      cat('\n')
+      optind <- which(aics == min(aics))
+      if(min(aics) < aic0){
+        myfit <- fits[[optind]]
+        cat('X',inds[optind],' was excluded\n\n',sep='')
+      }
+      q <- length( inds <- inds[-optind] )
+    }
+  }###
+  
+  
+  mysBeta_gf[k,inds] <- 1
+}
+
+
+cputime <- as.numeric(proc.time()[3]-ptm)
+cputime <- cputime/60
+
+
+cat(count, 'search steps done with CPUtime', round(cputime,3), 'minutes: completed!','\n')
+save(file=myfilename,'mysBeta_gf')
+@
+
+
+\end{document}
